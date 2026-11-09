@@ -49,19 +49,19 @@ In the pane (`ctrl+x tab` moves focus between the pane and the prompt): `t` tree
 At the prompt of a Claude Code terminal session:
 
 ```
-/plugin install codeview --marketplace <owner>/<repo>
+/plugin install codeview --marketplace LalithPrasaddl/claude-codereview
 ```
 
 Answer `y` to add the marketplace, then pick a scope (user scope = every session). From a shell instead:
 
 ```
-claude plugin install codeview --marketplace <owner>/<repo>
+claude plugin install codeview --marketplace LalithPrasaddl/claude-codereview
 ```
 
 ### Or run it from a clone, as its own command
 
 ```sh
-git clone https://github.com/<owner>/<repo>.git ~/codeview
+git clone https://github.com/LalithPrasaddl/claude-codereview.git ~/codeview
 ln -s ~/codeview/scripts/codeview /usr/local/bin/codeview   # or add an alias
 cd your-project && codeview
 ```
