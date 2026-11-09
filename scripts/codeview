@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Start Claude Code with the codeview pane loaded from this repository.
+# Fullscreen rendering is turned on so the pane docks beside the conversation.
+set -euo pipefail
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")" && pwd)"
+export CLAUDE_CODE_NO_FLICKER="${CLAUDE_CODE_NO_FLICKER:-1}"
+exec claude --plugin-dir "$here/.." "$@"

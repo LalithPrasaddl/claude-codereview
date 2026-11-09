@@ -1,0 +1,10 @@
+{
+  "name": "codeview",
+  "version": "0.1.0",
+  "description": "Read-only file tree, live file and diff viewer beside Claude, so you can follow the code Claude touches",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Lalith Prasad D L"
+  },
+  "license": "MIT"
+}

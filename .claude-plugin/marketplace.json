@@ -1,0 +1,5 @@
+{
+  "name": "codeview",
+  "owner": { "name": "Lalith Prasad D L" },
+  "plugins": [{ "name": "codeview", "source": "./" }]
+}
