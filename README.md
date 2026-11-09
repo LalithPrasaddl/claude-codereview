@@ -1,50 +1,101 @@
 # codeview
 
-A read-only file tree and live file/diff viewer that sits beside Claude Code in your terminal.
+See the code Claude is writing, as it writes it.
 
-When Claude edits a file, codeview opens it, scrolls to the change, and records it in a list for the session. You can flip any file to its git diff. Nothing in the pane can be edited: it's there so you keep seeing the code Claude writes, even though you're not typing it.
+When an AI session touches 10+ files, it's easy to stop reading and just commit. codeview keeps the code in front of you while Claude works: a read-only file tree, a live code and diff viewer that jumps to every file Claude edits, and a list of what changed and what you've actually looked at.
 
-## Why
+This repo has two versions:
 
-When an AI session touches 10+ files, it's easy to stop reading and just commit. codeview keeps the code in front of you while Claude works, tracks which changed files you've actually looked at, and makes it one keypress to ask Claude about a change.
+| | **Full-screen app** (`codeview` command) | **Pane plugin** (inside Claude Code) |
+|---|---|---|
+| What it is | A full-screen terminal app with Claude running inside it | A panel inside a normal `claude` session |
+| Size | The whole terminal: tree, code and Claude side by side | Capped at 45% of the width, on the right |
+| Install | `npm i -g` from this repo | `/plugin install` |
 
-## What it does
+---
 
-- **Folder tree.** Expand and collapse folders. Files and folders Claude changed are marked `●`. `node_modules`, `.git`, build output and similar folders are hidden.
-- **Auto-open on edit.** Each Edit/Write/NotebookEdit by Claude opens that file and scrolls to the first changed line.
-- **Diff toggle.** `d` flips between the full file and its diff: against `HEAD` in a git repo, otherwise against the file as it was when Claude first touched it this session.
-- **Change list.** Every file changed this session, with `+/−` counts, a ✓ once you've reviewed it, and the line Claude wrote just before making the edit.
-- **Step through changes.** `n` / `p` go to the next or previous changed file.
-- **Ask about it.** `a` puts "About your change to <file>:" in the prompt. `/codeview ask` quotes the text you selected with the mouse and asks Claude why it changed.
-- **Gentle nudge.** When a turn ends with unreviewed files, a toast tells you how many.
-- **Summary.** `/codeview summary` lists what changed and what you've reviewed.
-
-### Optional, off by default
-
-These add friction on purpose, so they stay off unless you turn them on:
-
-- `/codeview gate on`: Claude's `git commit` is refused until every changed file is reviewed.
-- `/codeview pause 5`: Claude pauses after every 5 edited files and asks you to review. `/codeview continue` lets it go on.
-
-## Commands
+## Full-screen app
 
 ```
-/codeview              switch between the viewer and the default Claude view
-/codeview tree         show the folder tree
-/codeview changes      list the files changed this session
-/codeview diff         flip the open file between full text and its diff
-/codeview ask          ask Claude about the text you selected
-/codeview summary      what changed this session and what you reviewed
-/codeview off | on     turn codeview off or on (remembered across sessions)
-/codeview gate on|off  optional review gate before git commit
-/codeview pause N|off  optional pause every N edited files
-/codeview continue     let Claude go on after a pause
-/codeview help
+┌ FILES ──────┬ CODE · src/math.js ─────────────┬ CLAUDE ─────────────────┐
+│ ▾ src/ ●    │ +4 −0  ○ not reviewed           │ > add a subtract        │
+│   math.js ● │  6  export function multiply(…  │   function              │
+│ README.md   │  9 ▌                            │                         │
+│             │ 10 ▌export function subtract(…  │ ⏺ Update(src/math.js)   │
+│             │ 11 ▌  return a - b              │                         │
+└─────────────┴─────────────────────────────────┴─────────────────────────┘
+ ctrl+\ then: 1 tree · 2 code · 3 claude · l layout · z zoom · ? help
 ```
 
-In the pane (`ctrl+x tab` moves focus between the pane and the prompt): `t` tree · `c` changes · `f` file · `d` diff · `n`/`p` next/previous change · `r` mark reviewed · `a` ask · arrows scroll · `ctrl+x x` closes it.
+### Install
 
-## Install
+Requires Node 18+, Claude Code on your PATH, macOS or Linux.
+
+```sh
+npm install -g github:LalithPrasaddl/claude-codereview
+```
+
+Or from a clone:
+
+```sh
+git clone https://github.com/LalithPrasaddl/claude-codereview.git
+cd claude-codereview && npm install && npm link
+```
+
+Then, in any project:
+
+```sh
+codeview            # instead of `claude`; any claude options pass through: codeview -c, codeview --resume
+```
+
+You set it up once and it works in every project. Your normal `claude` command is not changed.
+
+### What it does
+
+- **Two layouts.** The default is like an editor: tree | code | Claude. The second puts tree and code side by side with Claude below. `ctrl+\ l` switches, and your choice is remembered.
+- **Follows Claude.** Every file Claude changes opens in the middle, scrolled to the change, with changed lines marked `▌`. Any file that changes on disk while Claude is working counts: its Edit/Write tools, shell commands, subagents. Files your `.gitignore` excludes are skipped.
+- **Diff view.** `d` flips between the full file and its diff (against `HEAD` in a git repo, otherwise against the file before Claude touched it).
+- **Changes in the tree, like an editor.** Changed files are colored by status: yellow `M` modified, green `A` new, red `D` deleted, dimmed with `✓` once you've reviewed them. Folders holding unreviewed changes are yellow. A **CHANGED** list is pinned at the bottom of the tree (unreviewed first), so changes in collapsed folders are never out of sight. Click one to open it. `c` shows the full list.
+- **Reviewed.** A file counts as reviewed once you open it yourself (tree, list, `n`/`p`) or press `r`. Files Claude opened for you don't count.
+- **Step through changes.** `n` / `p`.
+- **Ask about it.** `a` types "About your change to <file>: " into Claude's prompt.
+- **Read-only.** Nothing in the tree or code panel can edit files.
+- **Claude only.** `ctrl+\ c` gives Claude the whole screen (the default Claude view) and back. `codeview off` makes the command run plain `claude` until `codeview on`.
+
+Optional, off by default:
+
+- `ctrl+\ g`: review gate. Claude's `git commit` is refused until every changed file is reviewed.
+- `ctrl+\ p`: pause Claude every 3 / 5 / 10 edited files so you can catch up. `ctrl+\ space` lets it continue.
+
+### Keys
+
+`ctrl+\` is the prefix: press it, let go, then:
+
+| Key | |
+|---|---|
+| `1` `2` `3` | focus tree / code / Claude (clicking a panel works too) |
+| `tab` | next panel |
+| `l` | switch layout |
+| `z` | zoom the focused panel to full screen, and back |
+| `c` | Claude only, and back |
+| `f` | follow Claude's edits on/off |
+| `g` / `p` / `space` | review gate / pause / continue after a pause |
+| `?` | all keys |
+| `q` | quit |
+
+In the tree: `↑↓` or `j k`, `enter` open, `← →` fold, `c` change list. In the code: `↑↓` scroll, `space`/`b` page, `d` diff, `n`/`p` next/previous change, `r` reviewed, `a` ask, `esc` back to Claude. The mouse wheel scrolls any panel.
+
+Settings live in `~/.config/codeview/config.json`.
+
+### How it works
+
+`codeview` starts the real `claude` inside a pseudo-terminal, emulated by xterm.js (the terminal inside VS Code), and draws it in its panel. It passes Claude Code a pair of hooks through `--settings`, so your own settings are untouched. The hooks report each edit, save the file's original text, and apply the optional gate and pause.
+
+---
+
+## Pane plugin (inside Claude Code)
+
+The same idea as a Claude Code plugin: a panel docked on the right of a normal `claude` session.
 
 At the prompt of a Claude Code terminal session:
 
@@ -58,28 +109,17 @@ Answer `y` to add the marketplace, then pick a scope (user scope = every session
 claude plugin install codeview --marketplace LalithPrasaddl/claude-codereview
 ```
 
-### Or run it from a clone, as its own command
+Commands: `/codeview` (switch between the viewer and the default view), `/codeview tree`, `/codeview changes`, `/codeview diff`, `/codeview ask`, `/codeview summary`, `/codeview off | on`, and the optional `/codeview gate on|off`, `/codeview pause N|off`, `/codeview continue`. In the pane (`ctrl+x tab` to focus it): `t` tree · `c` changes · `f` file · `d` diff · `n`/`p` next/previous · `r` reviewed · `a` ask.
 
-```sh
-git clone https://github.com/LalithPrasaddl/claude-codereview.git ~/codeview
-ln -s ~/codeview/scripts/codeview /usr/local/bin/codeview   # or add an alias
-cd your-project && codeview
-```
+The pane docks beside the conversation in fullscreen mode at 110+ columns. To try it from a clone without installing: `scripts/codeview-pane`.
 
-`codeview` starts `claude` with the plugin loaded and fullscreen rendering on. Plain `claude` stays unchanged.
-
-## Requirements
-
-- Claude Code with plugin hooks modules (2.1.317 or later).
-- The pane docks beside the conversation in **fullscreen mode at 110+ columns**. On narrower terminals, or on the main screen (tmux by default), it opens above the prompt instead.
-- macOS or Linux; uses `git` and `diff` from your PATH.
+---
 
 ## Development
 
 ```sh
-claude plugin validate .
-claude plugin test .
-claude --plugin-dir .      # reloads when you save a file
+npm install && npm test                           # full-screen app
+claude plugin validate . && claude plugin test .   # pane plugin
 ```
 
 ## License

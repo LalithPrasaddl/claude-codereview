@@ -1,0 +1,40 @@
+{
+  "name": "claude-codeview",
+  "version": "0.1.0",
+  "description": "Full-screen terminal app: file tree, live code and diff viewer, and Claude Code side by side",
+  "type": "module",
+  "bin": {
+    "codeview": "app/bin/codeview.js"
+  },
+  "files": [
+    "app/bin",
+    "app/src"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "license": "MIT",
+  "author": "Lalith Prasad D L",
+  "repository": "github:LalithPrasaddl/claude-codereview",
+  "dependencies": {
+    "@xterm/headless": "^6.0.0",
+    "highlight.js": "^11.12.0",
+    "node-pty": "^1.1.0"
+  },
+  "scripts": {
+    "test": "node --test app/test/*.test.js",
+    "postinstall": "node app/src/fix-pty.js"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "tui",
+    "diff",
+    "code-review",
+    "terminal"
+  ]
+}
