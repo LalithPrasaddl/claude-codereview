@@ -4,8 +4,8 @@ import path from 'node:path'
 
 import { changedLines, hunksOnly } from './diff.js'
 import { highlightLines, languageFor } from './highlight.js'
-import { BOLD, DIM, ITALIC } from './screen.js'
-import { fit } from './width.js'
+import { BOLD, DIM, ITALIC, UNDERLINE } from './screen.js'
+import { fit, textWidth } from './width.js'
 
 const MAX_BYTES = 2 * 1024 * 1024
 
@@ -159,6 +159,32 @@ export class CodePanel {
     this.clampScroll()
   }
 
+  /**
+   * One line listing the files Claude changed this turn, in edit order:
+   * ✓ reviewed, ○ not yet, the open one underlined.
+   * @param {import('./screen.js').Screen} screen
+   */
+  paintTurn(screen, x, y, maxX) {
+    const turn = this.session.turn
+    const names = turn.map(file => path.basename(file))
+    const label = names.map((name, i) =>
+      names.indexOf(name) !== names.lastIndexOf(name) ? path.relative(this.cwd, turn[i]) : name)
+    let cx = screen.text(x, y, 'this turn ', { flags: DIM }, maxX)
+    for (let i = 0; i < turn.length; i++) {
+      const change = this.session.changes.find(c => c.file === turn[i])
+      const left = turn.length - i - 1
+      const room = maxX - cx - (left > 0 ? textWidth(` +${left}`) : 0)
+      if (textWidth(` ○ ${label[i]}`) > room) {
+        screen.text(cx, y, ` +${turn.length - i}`, { flags: DIM }, maxX)
+        return
+      }
+      const isReviewed = change?.reviewed ?? true
+      cx = screen.text(cx, y, isReviewed ? ' ✓ ' : ' ○ ', { fg: isReviewed ? '32' : '33' }, maxX)
+      const isOpen = turn[i] === this.file
+      cx = screen.text(cx, y, label[i], isOpen ? { flags: BOLD | UNDERLINE } : isReviewed ? { flags: DIM } : {}, maxX)
+    }
+  }
+
   /** @param {import('./screen.js').Screen} screen */
   paint(screen, x, y, w, h) {
     const maxX = x + w
@@ -187,6 +213,10 @@ export class CodePanel {
     let top = y + 1
     if (change?.why) {
       screen.text(x + 1, top, fit(change.why, w - 2), { flags: DIM | ITALIC }, maxX)
+      top += 1
+    }
+    if (this.session.turn.length > 1) {
+      this.paintTurn(screen, x + 1, top, maxX)
       top += 1
     }
     const keys = 'd diff · n/p next/prev · r reviewed · a ask · f follow'

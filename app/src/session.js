@@ -77,12 +77,16 @@ export class Session {
     this.diskChanges = []
     /** @type {Map<string, number>} Bash calls running: id → start time */
     this.running = new Map()
-    /** @type {{ start: number, end: number, transcript: string | null, readAt: number }[]} */
+    /** @type {{ start: number, end: number, transcript: string | null, readAt: number, isTurnEnd?: boolean }[]} */
     this.windows = []
     /** True from the person's prompt until Claude's turn ends: disk changes then are Claude's. */
     this.busy = false
     this.turnStart = 0
     this.turnTranscript = null
+    /** @type {string[]} files Claude changed this turn, in the order it changed them */
+    this.turn = []
+    /** @type {(phase: 'start' | 'end') => void} called at a turn's start, and once its last files have settled */
+    this.onTurn = () => {}
     /** @type {Map<string, NodeJS.Timeout>} */
     this.liveTimers = new Map()
     this.eventsPath = path.join(dir, 'events.jsonl')
@@ -155,6 +159,7 @@ export class Session {
         const at = Math.max(...this.diskChanges.filter(c => c.file === file).map(c => c.at))
         this.recordFromDisk(file, at, w.transcript)
       }
+      if (w.isTurnEnd) this.onTurn('end')
     }
   }
 
@@ -184,9 +189,11 @@ export class Session {
           this.busy = true
           this.turnStart = event.at
           this.turnTranscript = event.transcript
+          this.turn = []
+          this.onTurn('start')
         } else if (event.type === 'turn-end') {
           this.busy = false
-          this.windows.push({ start: this.turnStart || event.at, end: event.at, transcript: event.transcript, readAt: Date.now() })
+          this.windows.push({ start: this.turnStart || event.at, end: event.at, transcript: event.transcript, readAt: Date.now(), isTurnEnd: true })
         } else if (event.type === 'tool-start') this.running.set(String(event.id), event.at)
         else if (event.type === 'tool-end') {
           const id = String(event.id)
@@ -219,6 +226,7 @@ export class Session {
         why: why || change.why,
       })
     }
+    if (!this.turn.includes(file)) this.turn.push(file)
     this.writeState()
     this.onEdit(change)
   }

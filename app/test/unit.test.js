@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { changedLines, diffStats, firstChangedLine, hunksOnly, isGitCommit } from '../src/diff.js'
+import { followOnEdit, followOnTurnEnd, reviewOrder } from '../src/follow.js'
 import { highlightLines, languageFor } from '../src/highlight.js'
 import { InputParser } from '../src/input.js'
 import { computeLayout, panelAt } from '../src/layout.js'
@@ -196,4 +197,57 @@ test('tree: arrows move from the tree into the pinned changed list and back', ()
   paint()
   assert.equal(tree.pinnedCursor, 0)
   fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('follow: the turn\'s first file opens, later ones wait, the person\'s pick wins', () => {
+  const turn = ['a.js', 'b.js']
+  assert.equal(followOnEdit({ shown: null, edited: 'a.js', turn: ['a.js'], userPicked: false }), 'a.js')
+  assert.equal(followOnEdit({ shown: 'old.js', edited: 'a.js', turn: ['a.js'], userPicked: false }), 'a.js', 'a file from before the turn gives way')
+  assert.equal(followOnEdit({ shown: 'a.js', edited: 'b.js', turn, userPicked: false }), null, 'b.js waits in the queue')
+  assert.equal(followOnEdit({ shown: 'a.js', edited: 'a.js', turn, userPicked: false }), 'a.js', 'a new change to the open file shows')
+  assert.equal(followOnEdit({ shown: 'x.js', edited: 'a.js', turn: ['a.js'], userPicked: true }), null)
+
+  const changes = [{ file: 'a.js', reviewed: true }, { file: 'b.js', reviewed: false }, { file: 'c.js', reviewed: false }]
+  assert.equal(followOnTurnEnd({ shown: 'c.js', turn: ['a.js', 'b.js', 'c.js'], changes, userPicked: false }), 'b.js')
+  assert.equal(followOnTurnEnd({ shown: 'b.js', turn: ['a.js', 'b.js'], changes, userPicked: false }), null)
+  assert.equal(followOnTurnEnd({ shown: 'c.js', turn: ['a.js', 'b.js'], changes, userPicked: true }), null)
+  assert.equal(followOnTurnEnd({ shown: 'a.js', turn: ['a.js'], changes, userPicked: false }), null, 'all reviewed: stay')
+
+  assert.deepEqual(reviewOrder(['c.js', 'a.js'], [{ file: 'a.js' }, { file: 'b.js' }, { file: 'c.js' }]), ['c.js', 'a.js', 'b.js'])
+})
+
+test('session: keeps this turn\'s files in edit order and reports the turn\'s end after they settle', async () => {
+  const { Session } = await import('../src/session.js')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codeview-test-'))
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'codeview-cwd-'))
+  const session = new Session(
+    { dir, cwd, isGit: false, config: { enabled: true, layout: 'editor', gate: false, threshold: 0, follow: true } },
+    () => {},
+  )
+  const phases = []
+  session.onTurn = phase => phases.push([phase, [...session.turn]])
+  const event = e => fs.appendFileSync(path.join(dir, 'events.jsonl'), JSON.stringify(e) + '\n')
+  const sleep = ms => new Promise(r => setTimeout(r, ms))
+  const [a, b] = [path.join(cwd, 'a.js'), path.join(cwd, 'b.js')]
+  fs.writeFileSync(a, 'x\n')
+  fs.writeFileSync(b, 'y\n')
+
+  event({ type: 'turn-start', at: Date.now() })
+  event({ type: 'edit', file: a })
+  event({ type: 'edit', file: b })
+  event({ type: 'edit', file: a })
+  session.poll()
+  assert.deepEqual(session.turn, [a, b])
+  event({ type: 'turn-end', at: Date.now() })
+  session.poll()
+  await sleep(750)
+  session.poll()
+  assert.deepEqual(phases, [['start', []], ['end', [a, b]]])
+
+  event({ type: 'turn-start', at: Date.now() })
+  session.poll()
+  assert.deepEqual(session.turn, [], 'a new turn starts empty')
+  session.stop()
+  fs.rmSync(dir, { recursive: true, force: true })
+  fs.rmSync(cwd, { recursive: true, force: true })
 })

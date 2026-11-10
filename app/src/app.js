@@ -8,6 +8,7 @@ import { ClaudePanel } from './claude-panel.js'
 import { CodePanel } from './code-panel.js'
 import { saveConfig } from './config.js'
 import { isGitRepo } from './diff.js'
+import { followOnEdit, followOnTurnEnd, reviewOrder } from './follow.js'
 import { InputParser } from './input.js'
 import { LAYOUTS, LAYOUT_LABELS, computeLayout, panelAt } from './layout.js'
 import { BOLD, DIM, Screen } from './screen.js'
@@ -73,6 +74,9 @@ export class App {
     this.tree = new TreePanel(cwd, this.session)
     this.code = new CodePanel(cwd, this.session)
     this.code.follow = config.follow
+    /** The person opened a file themselves this turn: follow leaves them there. */
+    this.userPicked = false
+    this.session.onTurn = phase => this.onTurn(phase)
     this.parser = new InputParser()
 
     const cols = process.stdout.columns || 120
@@ -154,12 +158,35 @@ export class App {
   /** @param {import('./session.js').Change} change */
   onEdit(change) {
     this.tree.rebuild()
-    if (this.code.follow) {
-      this.code.open(change.file, { focusLine: change.focusLine })
-      if (this.focus !== 'tree') this.tree.reveal(change.file)
+    const target = this.code.follow
+      ? followOnEdit({ shown: this.code.file, edited: change.file, turn: this.session.turn, userPicked: this.userPicked })
+      : null
+    if (target !== null) {
+      this.code.open(target, { focusLine: change.focusLine })
+      if (this.focus !== 'tree') this.tree.reveal(target)
     } else if (this.code.file === change.file) {
       this.code.reload()
     }
+    this.scheduleRender()
+  }
+
+  /** @param {'start' | 'end'} phase */
+  onTurn(phase) {
+    if (phase === 'start') {
+      this.userPicked = false
+      return
+    }
+    const { turn, changes } = this.session
+    if (this.code.follow) {
+      const target = followOnTurnEnd({ shown: this.code.file, turn, changes, userPicked: this.userPicked })
+      if (target !== null) {
+        const change = changes.find(c => c.file === target)
+        this.code.open(target, { focusLine: change?.focusLine })
+        if (this.focus !== 'tree') this.tree.reveal(target)
+      }
+    }
+    const waiting = turn.filter(file => changes.some(c => c.file === file && !c.reviewed)).length
+    if (turn.length > 1 && waiting > 0) this.flash(`Claude changed ${turn.length} files this turn, ${waiting} not reviewed: n steps through them in order.`)
     this.scheduleRender()
   }
 
@@ -167,16 +194,17 @@ export class App {
   openByUser(file, showDiff) {
     const change = this.session.changes.find(c => c.file === file)
     this.code.open(file, { focusLine: change?.focusLine, showDiff })
+    this.userPicked = true
     if (change) this.session.markReviewed(file)
   }
 
   step(by) {
-    const list = this.session.changes
+    const list = reviewOrder(this.session.turn, this.session.changes)
     if (list.length === 0) return this.flash('No changes yet.')
-    const at = list.findIndex(c => c.file === this.code.file)
-    const next = list[(at + by + list.length) % list.length]
-    this.openByUser(next.file)
-    this.tree.reveal(next.file)
+    const at = list.indexOf(this.code.file ?? '')
+    const next = at < 0 && by < 0 ? list[list.length - 1] : list[(at + by + list.length) % list.length]
+    this.openByUser(next)
+    this.tree.reveal(next)
   }
 
   flash(text) {

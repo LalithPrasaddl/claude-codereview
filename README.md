@@ -53,11 +53,11 @@ You set it up once and it works in every project. Your normal `claude` command i
 ### What it does
 
 - **Two layouts.** The default is like an editor: tree | code | Claude. The second puts tree and code side by side with Claude below. `ctrl+\ l` switches, and your choice is remembered.
-- **Follows Claude.** Every file Claude changes opens in the middle, scrolled to the change, with changed lines marked `▌`. Any file that changes on disk while Claude is working counts: its Edit/Write tools, shell commands, subagents. Files your `.gitignore` excludes are skipped.
+- **Follows Claude.** The first file Claude changes in a turn opens in the middle, scrolled to the change, with changed lines marked `▌`. Files it changes after that don't pull the view away: they queue in a **this turn** line at the top of the code panel, in the order Claude edited them (`✓` reviewed, `○` not yet). When Claude finishes, the first file you haven't reviewed is shown. If you open a file yourself, follow leaves you there until the next turn. Any file that changes on disk while Claude is working counts: its Edit/Write tools, shell commands, subagents. Files your `.gitignore` excludes are skipped.
 - **Diff view.** `d` flips between the full file and its diff (against `HEAD` in a git repo, otherwise against the file before Claude touched it).
 - **Changes in the tree, like an editor.** Changed files are colored by status: yellow `M` modified, green `A` new, red `D` deleted, dimmed with `✓` once you've reviewed them. Folders holding unreviewed changes are yellow. A **CHANGED** list is pinned at the bottom of the tree (unreviewed first), so changes in collapsed folders are never out of sight. Arrow down past the last tree row (or click) to pick one; `c` shows the full list.
 - **Reviewed.** A file counts as reviewed once you open it yourself (tree, list, `n`/`p`) or press `r`. Files Claude opened for you don't count.
-- **Step through changes.** `n` / `p`.
+- **Step through changes.** `n` / `p` go through this turn's files in the order Claude edited them, then the rest.
 - **Ask about it.** `a` types "About your change to <file>: " into Claude's prompt.
 - **Read-only.** Nothing in the tree or code panel can edit files.
 - **Claude only.** `ctrl+\ c` gives Claude the whole screen (the default Claude view) and back. `codeview off` makes the command run plain `claude` until `codeview on`.
