@@ -13,6 +13,7 @@ import { InputParser } from './input.js'
 import { LAYOUTS, LAYOUT_LABELS, computeLayout, panelAt } from './layout.js'
 import { BOLD, DIM, Screen } from './screen.js'
 import { Session } from './session.js'
+import { REPLY as TINT_REPLY } from './tint.js'
 import { IGNORED, TreePanel } from './tree-panel.js'
 import { fit, textWidth } from './width.js'
 
@@ -51,9 +52,10 @@ const shq = s => `'${String(s).replace(/'/g, `'\\''`)}'`
 
 export class App {
   /**
-   * @param {{ cwd: string, claudeArgs: string[], config: import('./config.js').Config }} opts
+   * @param {{ cwd: string, claudeArgs: string[], config: import('./config.js').Config,
+   *   tint?: import('./tint.js').Tint | null }} opts
    */
-  constructor({ cwd, claudeArgs, config }) {
+  constructor({ cwd, claudeArgs, config, tint = null }) {
     this.cwd = cwd
     this.config = config
     this.layout = config.layout
@@ -74,6 +76,7 @@ export class App {
     this.tree = new TreePanel(cwd, this.session)
     this.code = new CodePanel(cwd, this.session)
     this.code.follow = config.follow
+    this.code.tint = tint
     /** The person opened a file themselves this turn: follow leaves them there. */
     this.userPicked = false
     this.session.onTurn = phase => this.onTurn(phase)
@@ -116,7 +119,8 @@ export class App {
     return { x: r.x, y: r.y + 1, w: r.w, h: Math.max(3, r.h - 1) }
   }
 
-  start() {
+  /** @param {string} [pending] keys typed before the app took over the terminal */
+  start(pending = '') {
     const out = process.stdout
     out.write('\x1b[?1049h\x1b[?25l\x1b[2J\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h')
     process.stdin.setRawMode(true)
@@ -128,6 +132,7 @@ export class App {
     process.on('uncaughtException', err => this.exit(1, err))
     this.watch()
     this.render(true)
+    if (pending !== '') this.onInput(pending)
   }
 
   watch() {
@@ -310,6 +315,8 @@ export class App {
   }
 
   onInput(data) {
+    // A late answer to the background-color question must not reach Claude as typing.
+    data = data.replace(new RegExp(TINT_REPLY.source, 'gi'), '')
     for (const event of this.parser.feed(data)) {
       if (this.isHelp) {
         if (event.type !== 'mouse' || !event.isRelease) this.isHelp = false

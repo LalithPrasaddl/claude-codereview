@@ -54,5 +54,7 @@ export async function main(argv) {
   }
 
   const { App } = await import('./app.js')
-  new App({ cwd: process.cwd(), claudeArgs, config }).start()
+  const { resolveTint } = await import('./tint.js')
+  const { tint, leftover } = await resolveTint(config.tint)
+  new App({ cwd: process.cwd(), claudeArgs, config, tint }).start(leftover)
 }

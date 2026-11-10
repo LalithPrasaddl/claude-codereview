@@ -5,11 +5,11 @@ import path from 'node:path'
 
 /**
  * @typedef {{ enabled: boolean, layout: 'editor' | 'stacked', gate: boolean,
- *   threshold: number, follow: boolean }} Config
+ *   threshold: number, follow: boolean, tint: 'auto' | 'dark' | 'light' | 'off' }} Config
  */
 
 /** @type {Config} */
-export const DEFAULTS = { enabled: true, layout: 'editor', gate: false, threshold: 0, follow: true }
+export const DEFAULTS = { enabled: true, layout: 'editor', gate: false, threshold: 0, follow: true, tint: 'auto' }
 
 export function configPath() {
   const base = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')
@@ -22,6 +22,7 @@ export function loadConfig() {
     const stored = JSON.parse(fs.readFileSync(configPath(), 'utf8'))
     const merged = { ...DEFAULTS, ...stored }
     if (merged.layout !== 'editor' && merged.layout !== 'stacked') merged.layout = 'editor'
+    if (!['auto', 'dark', 'light', 'off'].includes(merged.tint)) merged.tint = 'auto'
     return merged
   } catch {
     return { ...DEFAULTS }

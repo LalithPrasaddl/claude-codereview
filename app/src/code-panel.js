@@ -26,6 +26,8 @@ export class CodePanel {
     this.hscroll = 0
     this.height = 10
     this.follow = true
+    /** @type {import('./tint.js').Tint | null} backgrounds for changed lines, or none */
+    this.tint = null
     /** @type {{ lines: Segment[][], note: string } | null} */
     this.text = null
     /** @type {{ lines: string[], base: string, added: Set<number>, removedAfter: Set<number> } | null} */
@@ -256,13 +258,19 @@ export class CodePanel {
         if (line === undefined) break
         const num = numbers[this.scroll + i] ?? ''
         screen.text(x, top + i, num.padStart(gutter - 1) + ' ', { flags: DIM }, maxX)
-        const style = line.startsWith('@@')
+        const kind = line.startsWith('@@') ? 'hunk' : line.startsWith('+') ? 'added' : line.startsWith('-') ? 'removed' : ''
+        // With a tint the background carries the change and the text keeps its normal color.
+        const bg = this.tint && (kind === 'added' || kind === 'removed') ? this.tint[kind] : ''
+        if (bg) screen.fill(x + gutter, top + i, w - gutter, 1, ' ', { bg })
+        const style = kind === 'hunk'
           ? { fg: '36', flags: DIM }
-          : line.startsWith('+')
-            ? { fg: '32' }
-            : line.startsWith('-')
-              ? { fg: '31' }
-              : {}
+          : bg
+            ? { bg }
+            : kind === 'added'
+              ? { fg: '32' }
+              : kind === 'removed'
+                ? { fg: '31' }
+                : {}
         screen.text(x + gutter, top + i, line.replace(/\t/g, '    ').slice(this.hscroll), style, maxX)
       }
       return
@@ -282,7 +290,9 @@ export class CodePanel {
       if (segments === undefined) break
       screen.text(x, top + i, String(n).padStart(gutter - 1) + ' ', { flags: DIM }, maxX)
       const mark = added.has(n) ? ['▌', '32'] : removedAfter.has(n) && !added.has(n + 1) ? ['▁', '31'] : [' ', '']
-      screen.text(x + gutter, top + i, mark[0], { fg: mark[1] }, maxX)
+      const bg = this.tint && added.has(n) ? this.tint.added : ''
+      if (bg) screen.fill(x + gutter, top + i, w - gutter, 1, ' ', { bg })
+      screen.text(x + gutter, top + i, mark[0], { fg: mark[1], bg }, maxX)
       let col = x + gutter + 1
       let skip = this.hscroll
       for (const seg of segments) {
@@ -293,7 +303,7 @@ export class CodePanel {
           skip -= cut
         }
         if (part === '') continue
-        col = screen.text(col, top + i, part, { fg: seg.fg, flags: seg.flags }, maxX)
+        col = screen.text(col, top + i, part, { fg: seg.fg, bg, flags: seg.flags }, maxX)
         if (col >= maxX) break
       }
     }

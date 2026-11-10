@@ -251,3 +251,14 @@ test('session: keeps this turn\'s files in edit order and reports the turn\'s en
   fs.rmSync(dir, { recursive: true, force: true })
   fs.rmSync(cwd, { recursive: true, force: true })
 })
+
+test('tint: reads the terminal\'s background reply and picks dark or light', async () => {
+  const { isLight, parseBackground, tintFor } = await import('../src/tint.js')
+  assert.deepEqual(parseBackground('\x1b]11;rgb:1e1e/1e1e/1e1e\x07'), { r: 30, g: 30, b: 30 })
+  assert.deepEqual(parseBackground('x\x1b]11;rgb:ff/ff/ff\x1b\\y'), { r: 255, g: 255, b: 255 }, 'ESC \\ ending, 2-digit channels')
+  assert.equal(parseBackground('\x1b[A'), null)
+  assert.equal(isLight({ r: 30, g: 30, b: 30 }), false)
+  assert.equal(isLight({ r: 250, g: 250, b: 245 }), true)
+  assert.match(tintFor('dark', false).added, /^48;5;/)
+  assert.match(tintFor('light', true).removed, /^48;2;/)
+})

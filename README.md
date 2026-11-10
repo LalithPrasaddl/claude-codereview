@@ -85,7 +85,7 @@ Optional, off by default:
 
 In the tree: `↑↓` or `j k` (down past the end goes into the CHANGED list), `enter` open, `← →` fold, `c` change list. In the code: `↑↓` scroll, `space`/`b` page, `d` diff, `n`/`p` next/previous change, `r` reviewed, `a` ask, `esc` back to Claude. The mouse wheel scrolls any panel.
 
-Settings live in `~/.config/codeview/config.json`.
+Settings live in `~/.config/codeview/config.json`. Changed lines get a faint green / red background suited to your terminal's colors; codeview asks the terminal for its background at startup. If it guesses wrong, set `"tint"` to `"dark"`, `"light"` or `"off"` (default `"auto"`).
 
 ### How it works
 
