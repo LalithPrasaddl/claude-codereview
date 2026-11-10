@@ -54,6 +54,10 @@ export class TreePanel {
     this.pinnedTop = Infinity
     /** @type {string[]} */
     this.pinnedFiles = []
+    /** Whether the pinned list ends in a "… N more" row. */
+    this.pinnedMore = false
+    /** Selected pinned row, or -1 while the cursor is in the tree. */
+    this.pinnedCursor = -1
     this.rebuild()
   }
 
@@ -109,6 +113,7 @@ export class TreePanel {
       dir = path.dirname(dir)
     }
     this.rebuild()
+    this.pinnedCursor = -1
     if (this.mode === 'files') {
       const at = this.rows.findIndex(r => r.path === file)
       if (at >= 0) this.cursor = at
@@ -145,9 +150,77 @@ export class TreePanel {
     return { open: row.path }
   }
 
+  /** Rows the cursor can stop on in the pinned list (files, plus the "more" row). */
+  pinnedCount() {
+    return this.mode === 'files' ? this.pinnedFiles.length + (this.pinnedMore ? 1 : 0) : 0
+  }
+
+  /** Open the selected pinned file, or show every change from the "more" row. */
+  activatePinned() {
+    const file = this.pinnedFiles[this.pinnedCursor]
+    if (file) return { open: file }
+    this.toggleMode()
+    return null
+  }
+
+  toggleMode() {
+    this.mode = this.mode === 'files' ? 'changes' : 'files'
+    this.cursor = 0
+    this.scroll = 0
+    this.pinnedCursor = -1
+  }
+
+  /** Keys while the cursor is in the pinned list. */
+  pinnedKey(name) {
+    const last = this.pinnedCount() - 1
+    switch (name) {
+      case 'up':
+      case 'k':
+        if (this.pinnedCursor > 0) this.pinnedCursor--
+        else this.leavePinned(this.rows.length - 1)
+        return null
+      case 'down':
+      case 'j':
+      case 'pagedown':
+      case 'end':
+      case 'G':
+        this.pinnedCursor = name === 'down' || name === 'j' ? Math.min(last, this.pinnedCursor + 1) : last
+        return null
+      case 'pageup':
+        this.leavePinned(this.rows.length - 1)
+        return null
+      case 'home':
+      case 'g':
+        this.leavePinned(0)
+        return null
+      case 'enter':
+      case 'space':
+      case 'right':
+      case 'l':
+        return this.activatePinned()
+      case 'c':
+        this.toggleMode()
+        return null
+      default:
+        return null
+    }
+  }
+
+  leavePinned(row) {
+    this.pinnedCursor = -1
+    this.cursor = Math.max(0, row)
+    this.keepCursorVisible()
+  }
+
   /** @returns {{ open: string } | null} */
   key(name) {
+    if (this.pinnedCursor >= 0) return this.pinnedKey(name)
     const n = this.count()
+    // Moving down past the last tree row goes into the pinned list.
+    if ((name === 'down' || name === 'j' || name === 'pagedown') && this.cursor >= n - 1 && this.pinnedCount() > 0) {
+      this.pinnedCursor = 0
+      return null
+    }
     switch (name) {
       case 'up':
       case 'k':
@@ -172,9 +245,7 @@ export class TreePanel {
         this.cursor = Math.max(0, n - 1)
         break
       case 'c':
-        this.mode = this.mode === 'files' ? 'changes' : 'files'
-        this.cursor = 0
-        this.scroll = 0
+        this.toggleMode()
         break
       case 'left':
       case 'h': {
@@ -218,11 +289,14 @@ export class TreePanel {
   /** @returns {{ open: string } | null} */
   click(bodyRow) {
     if (this.mode === 'files' && bodyRow >= this.pinnedTop) {
-      const file = this.pinnedFiles[bodyRow - this.pinnedTop - 1]
-      return file ? { open: file } : null
+      const index = bodyRow - this.pinnedTop - 1
+      if (index < 0 || index >= this.pinnedCount()) return null
+      this.pinnedCursor = index
+      return this.activatePinned()
     }
     const at = this.scroll + bodyRow
     if (at < 0 || at >= this.count()) return null
+    this.pinnedCursor = -1
     this.cursor = at
     return this.activate()
   }
@@ -287,7 +361,7 @@ export class TreePanel {
     for (let i = 0; i < treeH; i++) {
       const row = this.rows[this.scroll + i]
       if (!row) break
-      const isCursor = this.scroll + i === this.cursor && isFocused
+      const isCursor = this.scroll + i === this.cursor && isFocused && this.pinnedCursor < 0
       const flags = isCursor ? INVERSE : 0
       if (isCursor) screen.fill(x, y + i, w, 1, ' ', { flags: INVERSE })
       const icon = row.isDir ? (this.expanded.has(row.path) ? '▾ ' : '▸ ') : '  '
@@ -307,7 +381,11 @@ export class TreePanel {
 
     this.pinnedTop = Infinity
     this.pinnedFiles = []
-    if (pinnedH === 0) return
+    this.pinnedMore = false
+    if (pinnedH === 0) {
+      this.pinnedCursor = -1
+      return
+    }
     const top = y + h - pinnedH
     this.pinnedTop = h - pinnedH
     const done = list.filter(c => c.reviewed).length
@@ -317,12 +395,18 @@ export class TreePanel {
     const ordered = [...list].reverse().sort((a, b) => Number(a.reviewed) - Number(b.reviewed))
     const hidden = ordered.length - pinnedRows
     const shown = hidden > 0 ? ordered.slice(0, pinnedRows - 1) : ordered
+    this.pinnedFiles = shown.map(change => change.file)
+    this.pinnedMore = hidden > 0
+    // The list can shrink (or reorder) under the cursor: keep it on a real row.
+    if (this.pinnedCursor >= this.pinnedCount()) this.pinnedCursor = this.pinnedCount() - 1
+    const selected = isFocused ? this.pinnedCursor : -1
     shown.forEach((change, i) => {
-      this.changeRow(screen, x, top + 1 + i, w, change, false, openFile)
-      this.pinnedFiles.push(change.file)
+      this.changeRow(screen, x, top + 1 + i, w, change, i === selected, openFile)
     })
     if (hidden > 0) {
-      screen.text(x + 1, top + pinnedRows, fit(`… ${hidden + 1} more · c for all`, w - 1), { flags: DIM }, x + w)
+      const isCursor = selected === shown.length
+      if (isCursor) screen.fill(x, top + pinnedRows, w, 1, ' ', { flags: INVERSE })
+      screen.text(x + 1, top + pinnedRows, fit(`… ${hidden + 1} more · c for all`, w - 1), { flags: DIM | (isCursor ? INVERSE : 0) }, x + w)
     }
   }
 }

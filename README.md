@@ -55,7 +55,7 @@ You set it up once and it works in every project. Your normal `claude` command i
 - **Two layouts.** The default is like an editor: tree | code | Claude. The second puts tree and code side by side with Claude below. `ctrl+\ l` switches, and your choice is remembered.
 - **Follows Claude.** Every file Claude changes opens in the middle, scrolled to the change, with changed lines marked `▌`. Any file that changes on disk while Claude is working counts: its Edit/Write tools, shell commands, subagents. Files your `.gitignore` excludes are skipped.
 - **Diff view.** `d` flips between the full file and its diff (against `HEAD` in a git repo, otherwise against the file before Claude touched it).
-- **Changes in the tree, like an editor.** Changed files are colored by status: yellow `M` modified, green `A` new, red `D` deleted, dimmed with `✓` once you've reviewed them. Folders holding unreviewed changes are yellow. A **CHANGED** list is pinned at the bottom of the tree (unreviewed first), so changes in collapsed folders are never out of sight. Click one to open it. `c` shows the full list.
+- **Changes in the tree, like an editor.** Changed files are colored by status: yellow `M` modified, green `A` new, red `D` deleted, dimmed with `✓` once you've reviewed them. Folders holding unreviewed changes are yellow. A **CHANGED** list is pinned at the bottom of the tree (unreviewed first), so changes in collapsed folders are never out of sight. Arrow down past the last tree row (or click) to pick one; `c` shows the full list.
 - **Reviewed.** A file counts as reviewed once you open it yourself (tree, list, `n`/`p`) or press `r`. Files Claude opened for you don't count.
 - **Step through changes.** `n` / `p`.
 - **Ask about it.** `a` types "About your change to <file>: " into Claude's prompt.
@@ -83,7 +83,7 @@ Optional, off by default:
 | `?` | all keys |
 | `q` | quit |
 
-In the tree: `↑↓` or `j k`, `enter` open, `← →` fold, `c` change list. In the code: `↑↓` scroll, `space`/`b` page, `d` diff, `n`/`p` next/previous change, `r` reviewed, `a` ask, `esc` back to Claude. The mouse wheel scrolls any panel.
+In the tree: `↑↓` or `j k` (down past the end goes into the CHANGED list), `enter` open, `← →` fold, `c` change list. In the code: `↑↓` scroll, `space`/`b` page, `d` diff, `n`/`p` next/previous change, `r` reviewed, `a` ask, `esc` back to Claude. The mouse wheel scrolls any panel.
 
 Settings live in `~/.config/codeview/config.json`.
 

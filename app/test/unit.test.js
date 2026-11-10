@@ -12,6 +12,7 @@ import { InputParser } from '../src/input.js'
 import { computeLayout, panelAt } from '../src/layout.js'
 import { Screen } from '../src/screen.js'
 import { oneLine } from '../src/session.js'
+import { TreePanel } from '../src/tree-panel.js'
 import { fit, textWidth } from '../src/width.js'
 
 const HOOK = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'hook.js')
@@ -164,4 +165,35 @@ test('session: a file changed on disk during a turn is followed, after the turn 
   session.stop()
   fs.rmSync(dir, { recursive: true, force: true })
   fs.rmSync(cwd, { recursive: true, force: true })
+})
+
+test('tree: arrows move from the tree into the pinned changed list and back', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codeview-tree-'))
+  for (const name of ['a.js', 'b.js', 'c.js']) fs.writeFileSync(path.join(dir, name), 'x\n')
+  const change = (name, reviewed) => ({ file: path.join(dir, name), added: 1, removed: 0, edits: 1, reviewed, why: '', focusLine: 1, status: 'modified' })
+  const session = { changes: [change('a.js', false), change('c.js', false)] }
+  const tree = new TreePanel(dir, session)
+  const screen = new Screen(40, 12)
+  const paint = () => tree.paint(screen, 0, 0, 40, 12, true, null)
+  paint()
+  // Newest unreviewed first.
+  assert.deepEqual(tree.pinnedFiles.map(f => path.basename(f)), ['c.js', 'a.js'])
+  tree.key('G')
+  assert.equal(tree.pinnedCursor, -1)
+  tree.key('down')
+  assert.equal(tree.pinnedCursor, 0)
+  tree.key('down')
+  tree.key('down')
+  assert.equal(tree.pinnedCursor, 1, 'stops at the last pinned row')
+  assert.equal(path.basename(tree.key('enter').open), 'a.js')
+  tree.key('up')
+  tree.key('up')
+  assert.equal(tree.pinnedCursor, -1)
+  assert.equal(tree.cursor, 2, 'back on the last tree row')
+  tree.key('down')
+  // Reviewing the selected file reorders the list; the cursor stays on a real row.
+  session.changes = [change('a.js', true)]
+  paint()
+  assert.equal(tree.pinnedCursor, 0)
+  fs.rmSync(dir, { recursive: true, force: true })
 })
