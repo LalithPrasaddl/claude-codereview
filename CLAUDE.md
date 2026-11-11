@@ -45,11 +45,12 @@ Repo: github.com/LalithPrasaddl/claude-codereview.
 - Panels and helpers:
   - `tree-panel.js`: git-style status colors (M yellow, A green, D red, ✓ dim once reviewed), plus a pinned CHANGED list at the bottom that the arrow keys reach
   - `code-panel.js`: file view and diff view, with a line cursor and the note input box
+  - `summary.js`: the text `App.exit` prints after leaving the alternate screen. It recounts each file first, so committed or reverted files drop out; `CodePanel.shown` drives "never opened"
   - `notes.js`: review notes (file, line or null for a removed line, the line's code, text). `toPrompt` makes one line, since a newline would submit Claude's prompt; sending types it but doesn't press enter
   - `follow.js`: where follow goes. The turn's first file opens; later ones queue in the "this turn" strip; at Stop it shows the first unreviewed one; a file the person opens wins until the next turn
   - helpers in `screen.js`, `input.js`, `layout.js`, `width.js`, `highlight.js`, `diff.js`
 - `tint.js`: before the app starts, `main.js` asks the terminal for its background (OSC 11, 250ms timeout) to pick dark or light backgrounds for changed lines; no answer means no tint. A late reply is stripped in `App.onInput` so it never reaches Claude.
-- Config lives in `~/.config/codeview/config.json`: `{enabled, layout, gate, threshold, follow, tint}` (`tint`: `auto` | `dark` | `light` | `off`).
+- Config lives in `~/.config/codeview/config.json`: `{enabled, layout, gate, threshold, follow, tint, summary}` (`tint`: `auto` | `dark` | `light` | `off`).
 
 ## Product rules
 

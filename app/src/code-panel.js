@@ -60,6 +60,8 @@ export class CodePanel {
     /** Show changes since that review (true), or all changes (false: v switches). */
     this.useReviewBase = true
     this.diffStat = { added: 0, removed: 0 }
+    /** @type {Set<string>} every file this panel has shown, for the summary on quit */
+    this.shown = new Set()
     /** The line the cursor is on: an index into the lines shown (file lines, or diff lines). */
     this.cursor = 0
     /** @type {import('./notes.js').Notes | null} */
@@ -111,6 +113,7 @@ export class CodePanel {
   open(file, opts = {}) {
     const isSame = file === this.file
     this.file = file
+    this.shown.add(file)
     if (!isSame) {
       this.draft = null
       this.useReviewBase = true

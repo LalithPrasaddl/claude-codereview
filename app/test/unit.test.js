@@ -351,3 +351,31 @@ test('since review: a reviewed file Claude edits again shows only what is new, a
   fs.rmSync(dir, { recursive: true, force: true })
   fs.rmSync(cwd, { recursive: true, force: true })
 })
+
+test('summary on quit: unreviewed files, never opened, unsent notes; silent when nothing to say', async () => {
+  const { summaryText } = await import('../src/summary.js')
+  const change = (name, extra) => ({ file: `/r/${name}`, added: 2, removed: 1, edits: 1, reviewed: false, why: '', focusLine: 1, status: 'modified', ...extra })
+  const text = summaryText({
+    changes: [
+      change('src/a.js', { reviewed: true }),
+      change('src/db.js'),
+      change('src/new.js', { status: 'new', added: 40, removed: 0 }),
+      change('src/done.js', { added: 0, removed: 0 }),
+    ],
+    notes: [{ file: '/r/src/a.js', line: 3, code: 'x()', text: 'why?' }],
+    shown: new Set(['/r/src/a.js', '/r/src/db.js']),
+    cwd: '/r',
+    isColor: false,
+  })
+  assert.equal(text, [
+    'codeview · 3 files changed · 1 reviewed · 1 committed or reverted',
+    '  Not reviewed:',
+    '    M src/db.js   +2 −1',
+    '    A src/new.js  +40 −0   never opened',
+    '  1 review note was not sent:',
+    '    src/a.js:3 `x()`: why?',
+    '',
+  ].join('\n'))
+  assert.match(summaryText({ changes: [change('a.js', { reviewed: true })], notes: [], shown: new Set(), cwd: '/r', isColor: false }), /all reviewed ✓/)
+  assert.equal(summaryText({ changes: [change('a.js', { added: 0, removed: 0 })], notes: [], shown: new Set(), cwd: '/r', isColor: false }), '')
+})

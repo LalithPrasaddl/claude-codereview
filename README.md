@@ -60,6 +60,7 @@ You set it up once and it works in every project. Your normal `claude` command i
 - **Only what's new since you reviewed.** If Claude edits a file you've already reviewed, the code panel shows just the change since your review: the diff starts from what you read, and in the full file only the new lines are marked. `v` switches to all changes and back. If Claude puts the file back exactly as you reviewed it, it stays reviewed.
 - **Step through changes.** `n` / `p` go through this turn's files in the order Claude edited them, then the rest.
 - **Review notes.** Move the line cursor in the code panel and press `c` to leave a note on that line ("this should handle null"). Lines with notes get a `●`. `s` puts all your notes into Claude's prompt as one message, each with its file, line and code. You read it and press enter to send. `c` on a noted line edits the note; saving it empty removes it.
+- **Summary on quit.** When codeview closes it prints what Claude changed, which files you haven't reviewed (and which you never even opened), and any review notes you didn't send, so they aren't lost. Files you've since committed are left out. Set `"summary": false` in the config to turn it off.
 - **Ask about it.** `a` types "About your change to <file>: " into Claude's prompt.
 - **Read-only.** Nothing in the tree or code panel can edit files.
 - **Claude only.** `ctrl+\ c` gives Claude the whole screen (the default Claude view) and back. `codeview off` makes the command run plain `claude` until `codeview on`.

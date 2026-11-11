@@ -5,11 +5,11 @@ import path from 'node:path'
 
 /**
  * @typedef {{ enabled: boolean, layout: 'editor' | 'stacked', gate: boolean,
- *   threshold: number, follow: boolean, tint: 'auto' | 'dark' | 'light' | 'off' }} Config
+ *   threshold: number, follow: boolean, tint: 'auto' | 'dark' | 'light' | 'off', summary: boolean }} Config
  */
 
 /** @type {Config} */
-export const DEFAULTS = { enabled: true, layout: 'editor', gate: false, threshold: 0, follow: true, tint: 'auto' }
+export const DEFAULTS = { enabled: true, layout: 'editor', gate: false, threshold: 0, follow: true, tint: 'auto', summary: true }
 
 export function configPath() {
   const base = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')

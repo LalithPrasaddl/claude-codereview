@@ -14,6 +14,7 @@ import { Notes } from './notes.js'
 import { LAYOUTS, LAYOUT_LABELS, computeLayout, panelAt } from './layout.js'
 import { BOLD, DIM, Screen } from './screen.js'
 import { Session } from './session.js'
+import { summaryText } from './summary.js'
 import { REPLY as TINT_REPLY } from './tint.js'
 import { IGNORED, TreePanel } from './tree-panel.js'
 import { fit, textWidth } from './width.js'
@@ -567,6 +568,18 @@ export class App {
       process.stdin.setRawMode(false)
     } catch {
       // not a tty any more
+    }
+    if (this.config.summary) {
+      try {
+        // Counted again now: files may have been committed or reverted since.
+        for (const change of this.session.changes) this.session.refresh(change.file)
+        process.stdout.write(summaryText({
+          changes: this.session.changes, notes: this.notes.list, shown: this.code.shown,
+          cwd: this.cwd, isColor: !process.env.NO_COLOR,
+        }))
+      } catch {
+        // A summary is not worth a crash.
+      }
     }
     fs.rmSync(this.dir, { recursive: true, force: true })
     if (err) console.error('codeview crashed:', err)
