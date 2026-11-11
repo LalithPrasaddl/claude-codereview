@@ -4,10 +4,27 @@ import path from 'node:path'
 
 import { changedLines, hunksOnly } from './diff.js'
 import { highlightLines, languageFor } from './highlight.js'
-import { BOLD, DIM, ITALIC, UNDERLINE } from './screen.js'
-import { fit, textWidth } from './width.js'
+import { BOLD, DIM, INVERSE, ITALIC, UNDERLINE } from './screen.js'
+import { fit, fitLeft, textWidth } from './width.js'
 
 const MAX_BYTES = 2 * 1024 * 1024
+const ACCENT = '38;5;209'
+const KEYS = 'd diff · n/p next/prev · r reviewed · c note · s send notes · a ask · f follow'
+
+/** The new-side line number of each diff line: null for removed lines, hunk headers and "\ No newline". */
+export function diffLineNumbers(lines) {
+  let next = 0
+  return lines.map(line => {
+    const header = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(line)
+    if (header) {
+      next = Number(header[1])
+      return null
+    }
+    if (line.startsWith('-') || line.startsWith('\\')) return null
+    next += 1
+    return next - 1
+  })
+}
 
 /** @typedef {import('./highlight.js').Segment} Segment */
 
@@ -30,8 +47,18 @@ export class CodePanel {
     this.tint = null
     /** @type {{ lines: Segment[][], note: string } | null} */
     this.text = null
-    /** @type {{ lines: string[], base: string, added: Set<number>, removedAfter: Set<number> } | null} */
+    /** @type {{ lines: string[], numbers: (number | null)[], base: string, added: Set<number>, removedAfter: Set<number> } | null} */
     this.diff = null
+    /** The line the cursor is on: an index into the lines shown (file lines, or diff lines). */
+    this.cursor = 0
+    /** @type {import('./notes.js').Notes | null} */
+    this.notes = null
+    /** @type {{ line: number | null, code: string, text: string } | null} a note being typed */
+    this.draft = null
+    /** Where the body starts on screen, and where the typing cursor is, from the last paint. */
+    this.bodyTop = 0
+    /** @type {{ x: number, y: number } | null} */
+    this.inputCursor = null
   }
 
   title() {
@@ -46,7 +73,8 @@ export class CodePanel {
     const { text, base } = this.session.diff(file)
     const { added, removedAfter } = changedLines(text)
     const hunks = hunksOnly(text)
-    this.diff = { lines: hunks === '' ? [] : hunks.split('\n'), base, added, removedAfter }
+    const lines = hunks === '' ? [] : hunks.split('\n')
+    this.diff = { lines, numbers: diffLineNumbers(lines), base, added, removedAfter }
     try {
       const stat = fs.statSync(file)
       if (stat.size > MAX_BYTES) {
@@ -69,21 +97,58 @@ export class CodePanel {
   open(file, opts = {}) {
     const isSame = file === this.file
     this.file = file
+    if (!isSame) this.draft = null
     if (opts.showDiff !== undefined) this.showDiff = opts.showDiff
     this.reload()
     if (opts.focusLine !== undefined) this.focusOn(opts.focusLine)
     else if (!isSame) {
       this.scroll = 0
       this.hscroll = 0
+      this.cursor = 0
     }
   }
 
   focusOn(line) {
     if (this.showDiff) {
       this.scroll = 0
+      const first = (this.diff?.lines ?? []).findIndex(l => l.startsWith('+') || l.startsWith('-'))
+      this.cursor = Math.max(0, first)
+      this.keepCursorVisible()
       return
     }
+    this.cursor = Math.max(0, line - 1)
     this.scroll = Math.max(0, line - 1 - Math.min(5, Math.floor(this.height / 4)))
+  }
+
+  /** The cursor's line as a note target: its line number in the file (null if removed) and text. */
+  lineAt(index = this.cursor) {
+    if (this.showDiff) {
+      const raw = this.diff?.lines[index]
+      if (raw === undefined || raw.startsWith('@@') || raw.startsWith('\\')) return null
+      return { line: this.diff?.numbers[index] ?? null, code: raw.slice(1) }
+    }
+    const segments = this.text?.lines[index]
+    if (segments === undefined) return null
+    return { line: index + 1, code: segments.map(seg => seg.text).join('') }
+  }
+
+  noteAt(index) {
+    if (this.notes === null || this.file === null) return undefined
+    const at = this.lineAt(index)
+    return at ? this.notes.at(this.file, at.line, at.code) : undefined
+  }
+
+  keepCursorVisible() {
+    this.cursor = Math.max(0, Math.min(this.cursor, this.lineCount() - 1))
+    if (this.cursor < this.scroll) this.scroll = this.cursor
+    else if (this.cursor >= this.scroll + this.height) this.scroll = this.cursor - this.height + 1
+    this.clampScroll()
+  }
+
+  /** A click at screen row `y` puts the cursor on that line. */
+  clickAt(y) {
+    if (y < this.bodyTop || this.lineCount() === 0) return
+    this.cursor = Math.min(this.scroll + y - this.bodyTop, this.lineCount() - 1)
   }
 
   lineCount() {
@@ -95,32 +160,34 @@ export class CodePanel {
     this.scroll = Math.max(0, Math.min(this.scroll, Math.max(0, this.lineCount() - this.height + 1)))
   }
 
-  /** @returns {string | null} an action for the app: 'next' | 'prev' | 'reviewed' | 'ask' */
+  /** @returns {string | null} an action for the app: 'next' | 'prev' | 'reviewed' | 'ask' | 'note' | 'send' */
   key(name) {
     switch (name) {
       case 'up':
       case 'k':
-        this.scroll -= 1
+        this.cursor -= 1
         break
       case 'down':
       case 'j':
-        this.scroll += 1
+        this.cursor += 1
         break
       case 'pageup':
       case 'b':
+        this.cursor -= this.height - 2
         this.scroll -= this.height - 2
         break
       case 'pagedown':
       case 'space':
+        this.cursor += this.height - 2
         this.scroll += this.height - 2
         break
       case 'home':
       case 'g':
-        this.scroll = 0
+        this.cursor = 0
         break
       case 'end':
       case 'G':
-        this.scroll = this.lineCount()
+        this.cursor = this.lineCount()
         break
       case 'left':
       case 'h':
@@ -130,14 +197,15 @@ export class CodePanel {
       case 'l':
         this.hscroll += 8
         break
-      case 'd':
+      case 'd': {
         this.showDiff = !this.showDiff
         this.scroll = 0
-        if (!this.showDiff && this.file) {
-          const change = this.session.changes.find(c => c.file === this.file)
-          if (change) this.focusOn(change.focusLine)
-        }
+        this.cursor = 0
+        const change = this.file ? this.session.changes.find(c => c.file === this.file) : undefined
+        if (this.showDiff) this.focusOn(0) // the diff starts on its first changed line
+        else if (change) this.focusOn(change.focusLine)
         break
+      }
       case 'f':
         this.follow = !this.follow
         break
@@ -149,16 +217,23 @@ export class CodePanel {
         return 'reviewed'
       case 'a':
         return 'ask'
+      case 'c':
+        return 'note'
+      case 's':
+        return 'send'
       default:
         return null
     }
     this.clampScroll()
+    this.keepCursorVisible()
     return null
   }
 
   wheel(delta) {
     this.scroll += delta
     this.clampScroll()
+    // The cursor stays on screen.
+    this.cursor = Math.max(this.scroll, Math.min(this.cursor, this.scroll + this.height - 1, this.lineCount() - 1))
   }
 
   /**
@@ -187,9 +262,29 @@ export class CodePanel {
     }
   }
 
-  /** @param {import('./screen.js').Screen} screen */
-  paint(screen, x, y, w, h) {
+  /**
+   * The note being typed, on the panel's last row; sets where the terminal cursor goes.
+   * @param {import('./screen.js').Screen} screen
+   */
+  paintDraft(screen, x, y, w) {
     const maxX = x + w
+    const draft = /** @type {NonNullable<typeof this.draft>} */ (this.draft)
+    screen.fill(x, y, w, 1, ' ', { flags: INVERSE })
+    const where = draft.line === null ? 'removed line' : `line ${draft.line}`
+    const label = ` note on ${where} › `
+    const hint = ' enter save · esc cancel '
+    let cx = screen.text(x, y, label, { fg: ACCENT, flags: BOLD | INVERSE }, maxX)
+    const hintW = w - textWidth(label) > textWidth(hint) + 20 ? textWidth(hint) : 0
+    const room = maxX - cx - hintW - 1
+    cx = screen.text(cx, y, fitLeft(draft.text, room), { flags: INVERSE }, maxX)
+    this.inputCursor = { x: cx, y }
+    if (hintW > 0) screen.text(maxX - hintW, y, hint, { flags: INVERSE | DIM }, maxX)
+  }
+
+  /** @param {import('./screen.js').Screen} screen */
+  paint(screen, x, y, w, h, isFocused = false) {
+    const maxX = x + w
+    this.inputCursor = null
     if (this.file === null) {
       const lines = [
         'No file open.',
@@ -221,15 +316,28 @@ export class CodePanel {
       this.paintTurn(screen, x + 1, top, maxX)
       top += 1
     }
-    const keys = 'd diff · n/p next/prev · r reviewed · a ask · f follow'
-    screen.text(x + 1, top, fit(keys, w - 2), { flags: DIM }, maxX)
+    const noteHere = this.draft ? undefined : this.noteAt(this.cursor)
+    if (noteHere) screen.text(x + 1, top, fit(`● ${noteHere.text}`, w - 2), { fg: ACCENT }, maxX)
+    else screen.text(x + 1, top, fit(KEYS, w - 2), { flags: DIM }, maxX)
     top += 1
     screen.fill(x, top, w, 1, '─', { flags: DIM })
     top += 1
 
-    const bodyH = y + h - top
-    this.height = bodyH
+    let bodyH = y + h - top
+    if (this.draft) {
+      bodyH -= 1
+      this.paintDraft(screen, x, y + h - 1, w)
+    }
+    this.height = Math.max(1, bodyH)
+    this.bodyTop = top
     this.clampScroll()
+    /** The line-number gutter: the cursor's number highlighted, ● after a line with a note. */
+    const gutterAt = (row, index, num, width) => {
+      const isCursor = isFocused && index === this.cursor
+      screen.text(x, row, num.padStart(width - 1), isCursor ? { fg: ACCENT, flags: BOLD | INVERSE } : { flags: DIM }, maxX)
+      if (this.noteAt(index)) screen.text(x + width - 1, row, '●', { fg: ACCENT, flags: BOLD }, maxX)
+      else screen.text(x + width - 1, row, isCursor ? '›' : ' ', { fg: ACCENT }, maxX)
+    }
 
     if (this.showDiff) {
       const lines = this.diff?.lines ?? []
@@ -238,26 +346,12 @@ export class CodePanel {
         screen.text(x + 1, top, fit(msg, w - 2), { flags: DIM }, maxX)
         return
       }
-      // Number the lines on the new side as we go.
-      let newLine = 0
-      const numbers = []
-      for (const line of lines) {
-        const header = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(line)
-        if (header) {
-          newLine = Number(header[1])
-          numbers.push('')
-        } else if (line.startsWith('-')) numbers.push('')
-        else {
-          numbers.push(String(newLine))
-          newLine += 1
-        }
-      }
-      const gutter = Math.max(3, String(newLine).length) + 1
+      const numbers = this.diff?.numbers ?? []
+      const gutter = Math.max(3, String(numbers.reduce((m, n) => Math.max(m, n ?? 0), 0)).length) + 1
       for (let i = 0; i < bodyH; i++) {
         const line = lines[this.scroll + i]
         if (line === undefined) break
-        const num = numbers[this.scroll + i] ?? ''
-        screen.text(x, top + i, num.padStart(gutter - 1) + ' ', { flags: DIM }, maxX)
+        gutterAt(top + i, this.scroll + i, String(numbers[this.scroll + i] ?? ''), gutter)
         const kind = line.startsWith('@@') ? 'hunk' : line.startsWith('+') ? 'added' : line.startsWith('-') ? 'removed' : ''
         // With a tint the background carries the change and the text keeps its normal color.
         const bg = this.tint && (kind === 'added' || kind === 'removed') ? this.tint[kind] : ''
@@ -288,7 +382,7 @@ export class CodePanel {
       const n = this.scroll + i + 1
       const segments = text.lines[n - 1]
       if (segments === undefined) break
-      screen.text(x, top + i, String(n).padStart(gutter - 1) + ' ', { flags: DIM }, maxX)
+      gutterAt(top + i, n - 1, String(n), gutter)
       const mark = added.has(n) ? ['▌', '32'] : removedAfter.has(n) && !added.has(n + 1) ? ['▁', '31'] : [' ', '']
       const bg = this.tint && added.has(n) ? this.tint.added : ''
       if (bg) screen.fill(x + gutter, top + i, w - gutter, 1, ' ', { bg })

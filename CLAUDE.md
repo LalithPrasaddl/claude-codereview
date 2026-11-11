@@ -43,7 +43,8 @@ Repo: github.com/LalithPrasaddl/claude-codereview.
   - without git, `diff -u` against the copy the `pre` hook saved
 - Panels and helpers:
   - `tree-panel.js`: git-style status colors (M yellow, A green, D red, ✓ dim once reviewed), plus a pinned CHANGED list at the bottom that the arrow keys reach
-  - `code-panel.js`: file view and diff view
+  - `code-panel.js`: file view and diff view, with a line cursor and the note input box
+  - `notes.js`: review notes (file, line or null for a removed line, the line's code, text). `toPrompt` makes one line, since a newline would submit Claude's prompt; sending types it but doesn't press enter
   - `follow.js`: where follow goes. The turn's first file opens; later ones queue in the "this turn" strip; at Stop it shows the first unreviewed one; a file the person opens wins until the next turn
   - helpers in `screen.js`, `input.js`, `layout.js`, `width.js`, `highlight.js`, `diff.js`
 - `tint.js`: before the app starts, `main.js` asks the terminal for its background (OSC 11, 250ms timeout) to pick dark or light backgrounds for changed lines; no answer means no tint. A late reply is stripped in `App.onInput` so it never reaches Claude.

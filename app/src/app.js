@@ -10,6 +10,7 @@ import { saveConfig } from './config.js'
 import { isGitRepo } from './diff.js'
 import { followOnEdit, followOnTurnEnd, reviewOrder } from './follow.js'
 import { InputParser } from './input.js'
+import { Notes } from './notes.js'
 import { LAYOUTS, LAYOUT_LABELS, computeLayout, panelAt } from './layout.js'
 import { BOLD, DIM, Screen } from './screen.js'
 import { Session } from './session.js'
@@ -35,12 +36,14 @@ const HELP = [
   '  g             review gate on/off: refuse git commit until all reviewed',
   '  p             pause Claude every 3 / 5 / 10 edited files, or off',
   '  space         let Claude continue after a pause',
+  '  s             send your review notes to Claude\'s prompt',
   `  ${PREFIX_NAME}        send ${PREFIX_NAME} itself to Claude`,
   '  q             quit codeview (and Claude)',
   '',
   'In the tree:  ↑↓ / j k move · enter open · ← → fold · c changes list',
-  'In the code:  ↑↓ scroll · space/b page · d diff · n/p next/prev change',
-  '              r mark reviewed · a ask Claude about this file · esc back to Claude',
+  'In the code:  ↑↓ move the line cursor · space/b page · d diff · n/p next/prev change',
+  '              c note on this line · s send notes · r mark reviewed',
+  '              a ask Claude about this file · esc back to Claude',
   '',
   'Native text selection: hold option (iTerm2/Terminal) or shift while dragging.',
   '',
@@ -77,6 +80,8 @@ export class App {
     this.code = new CodePanel(cwd, this.session)
     this.code.follow = config.follow
     this.code.tint = tint
+    this.notes = new Notes()
+    this.code.notes = this.notes
     /** The person opened a file themselves this turn: follow leaves them there. */
     this.userPicked = false
     this.session.onTurn = phase => this.onTurn(phase)
@@ -164,7 +169,7 @@ export class App {
   onEdit(change) {
     this.tree.rebuild()
     const target = this.code.follow
-      ? followOnEdit({ shown: this.code.file, edited: change.file, turn: this.session.turn, userPicked: this.userPicked })
+      ? followOnEdit({ shown: this.code.file, edited: change.file, turn: this.session.turn, userPicked: this.userPicked || this.code.draft !== null })
       : null
     if (target !== null) {
       this.code.open(target, { focusLine: change.focusLine })
@@ -183,7 +188,7 @@ export class App {
     }
     const { turn, changes } = this.session
     if (this.code.follow) {
-      const target = followOnTurnEnd({ shown: this.code.file, turn, changes, userPicked: this.userPicked })
+      const target = followOnTurnEnd({ shown: this.code.file, turn, changes, userPicked: this.userPicked || this.code.draft !== null })
       if (target !== null) {
         const change = changes.find(c => c.file === target)
         this.code.open(target, { focusLine: change?.focusLine })
@@ -210,6 +215,36 @@ export class App {
     const next = at < 0 && by < 0 ? list[list.length - 1] : list[(at + by + list.length) % list.length]
     this.openByUser(next)
     this.tree.reveal(next)
+  }
+
+  /** A key while a note is being typed. */
+  draftKey(event) {
+    const draft = /** @type {NonNullable<CodePanel['draft']>} */ (this.code.draft)
+    if (event.name === 'enter') {
+      const file = /** @type {string} */ (this.code.file)
+      const had = this.notes.at(file, draft.line, draft.code) !== undefined
+      this.notes.set(file, draft.line, draft.code, draft.text)
+      this.code.draft = null
+      const has = this.notes.at(file, draft.line, draft.code) !== undefined
+      this.flash(had && !has ? 'Note removed.' : has ? `Note saved (${this.notes.count} in all). s sends them to Claude.` : 'Empty note: nothing saved.')
+    } else if (event.name === 'escape') this.code.draft = null
+    else if (event.name === 'backspace') draft.text = [...draft.text].slice(0, -1).join('')
+    else if (event.name === 'space') draft.text += ' '
+    else if (event.type === 'key' && /^[^\x00-\x1f\x7f]+$/.test(event.raw)) draft.text += event.raw
+  }
+
+  /** Type every note into Claude's prompt as one message; the person reads it and presses enter. */
+  sendNotes() {
+    if (this.notes.count === 0) return this.flash('No notes yet: in the code panel, c adds one on the cursor line.')
+    const n = this.notes.count
+    this.claude.write(this.notes.toPrompt(this.cwd))
+    this.notes.clear()
+    this.focus = 'claude'
+    if (this.zoomed !== null && this.zoomed !== 'claude') {
+      this.zoomed = null
+      this.relayout()
+    }
+    this.flash(`${n} note${n === 1 ? ' is' : 's are'} in Claude's prompt: press enter to send.`)
   }
 
   flash(text) {
@@ -297,6 +332,9 @@ export class App {
         this.session.allowMore()
         this.flash('Claude may continue editing.')
         break
+      case 's':
+        this.sendNotes()
+        break
       case '?':
       case 'h':
         this.isHelp = true
@@ -322,6 +360,10 @@ export class App {
         if (event.type !== 'mouse' || !event.isRelease) this.isHelp = false
         continue
       }
+      if (event.type === 'paste' && this.code.draft) {
+        this.code.draft.text += event.raw.slice(6, -6).replace(/\s+/g, ' ')
+        continue
+      }
       if (event.type === 'paste') {
         this.focus = 'claude'
         this.claude.write(this.claude.wantsPaste ? event.raw : event.raw.slice(6, -6))
@@ -338,6 +380,10 @@ export class App {
       }
       if (event.name === 'ctrl-\\') {
         this.isPrefix = true
+        continue
+      }
+      if (this.code.draft && this.focus === 'code') {
+        this.draftKey(event)
         continue
       }
       if (this.focus === 'claude') {
@@ -364,6 +410,12 @@ export class App {
         const change = this.session.changes.find(c => c.file === this.code.file)
         if (change) this.session.markReviewed(change.file, !change.reviewed)
         else this.flash('Claude has not changed this file.')
+      } else if (action === 'note') {
+        const at = this.code.file ? this.code.lineAt() : null
+        if (at === null || this.code.file === null) this.flash('Put the cursor on a line of code first.')
+        else this.code.draft = { ...at, text: this.notes.at(this.code.file, at.line, at.code)?.text ?? '' }
+      } else if (action === 'send') {
+        this.sendNotes()
       } else if (action === 'ask' && this.code.file) {
         this.claude.write(`About your change to ${path.relative(this.cwd, this.code.file)}: `)
         this.focus = 'claude'
@@ -388,6 +440,7 @@ export class App {
     if (!event.isRelease && !event.isDrag) {
       this.focus = id
       this.dragTarget = id
+      if (id === 'code') this.code.clickAt(event.y)
       if (id === 'tree' && event.y > rect.y) {
         const result = this.tree.click(event.y - rect.y - 1)
         if (result) this.openByUser(result.open)
@@ -417,12 +470,16 @@ export class App {
     }
     if (code) {
       this.title(code, this.code.title(), 'code')
-      this.code.paint(s, code.x, code.y + 1, code.w, code.h - 1)
+      if (this.code.draft && this.focus !== 'code') this.code.draft = null
+      this.code.paint(s, code.x, code.y + 1, code.w, code.h - 1, this.focus === 'code')
     }
     if (claude) {
       this.title(claude, 'CLAUDE', 'claude')
       const cursor = this.claude.paint(s, claude.x, claude.y + 1, this.focus === 'claude' && !this.isPrefix)
       s.cursor = cursor
+    }
+    if (code && this.code.inputCursor) {
+      s.cursor = this.code.inputCursor
     }
     this.borders()
     this.statusBar()
@@ -467,6 +524,7 @@ export class App {
     if (this.session.threshold > 0) parts.push(`pause every ${this.session.threshold}`)
     const n = this.session.changes.length
     if (n > 0) parts.push(`${this.session.reviewedCount}/${n} reviewed`)
+    if (this.notes.count > 0) parts.push(`${this.notes.count} note${this.notes.count === 1 ? '' : 's'}: s sends`)
     parts.push(this.zoomed ? `zoom: ${this.zoomed}` : LAYOUT_LABELS[this.layout])
     const right = parts.join(' · ') + ' '
     const rightW = textWidth(right)
