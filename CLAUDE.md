@@ -41,6 +41,7 @@ Repo: github.com/LalithPrasaddl/claude-codereview.
 - Diffs:
   - `git diff HEAD`; untracked files use `--no-index /dev/null`
   - without git, `diff -u` against the copy the `pre` hook saved
+  - since review: marking a file reviewed copies it to `$CODEVIEW_DIR/reviewed/<sha1>`. When Claude edits it again, `CodePanel.open` reads that copy into `reviewBase` (before the open marks it reviewed again) and diffs against it with `diff -u -`; `v` switches to the HEAD diff. `record` points `focusLine` at the first new line, and leaves a file reviewed if it matches the copy exactly
 - Panels and helpers:
   - `tree-panel.js`: git-style status colors (M yellow, A green, D red, ✓ dim once reviewed), plus a pinned CHANGED list at the bottom that the arrow keys reach
   - `code-panel.js`: file view and diff view, with a line cursor and the note input box

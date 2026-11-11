@@ -304,3 +304,50 @@ test('code panel: diff line numbers and the cursor line as a note target', async
   assert.deepEqual(panel.lineAt(), { line: 2, code: 'two' })
   fs.rmSync(dir, { recursive: true, force: true })
 })
+
+test('since review: a reviewed file Claude edits again shows only what is new, and a revert stays reviewed', async () => {
+  const { Session } = await import('../src/session.js')
+  const { CodePanel } = await import('../src/code-panel.js')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codeview-test-'))
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'codeview-cwd-'))
+  const session = new Session(
+    { dir, cwd, isGit: false, config: { enabled: true, layout: 'editor', gate: false, threshold: 0, follow: true } },
+    () => {},
+  )
+  const event = e => fs.appendFileSync(path.join(dir, 'events.jsonl'), JSON.stringify(e) + '\n')
+  const file = path.join(cwd, 'a.js')
+  const edit = text => {
+    fs.writeFileSync(file, text)
+    event({ type: 'edit', file })
+    session.poll()
+  }
+  const reviewed = 'one\ntwo\nthree\n'
+  edit(reviewed)
+  session.markReviewed(file)
+  assert.equal(session.reviewSnapshot(file), reviewed)
+
+  edit('one\ntwo\nthree\nfour\n')
+  const change = session.changes[0]
+  assert.equal(change.reviewed, false)
+  assert.equal(change.focusLine, 4, 'follow points at the new line, not old changes')
+
+  const panel = new CodePanel(cwd, session)
+  panel.open(file, { focusLine: change.focusLine })
+  assert.equal(panel.isSinceReview(), true)
+  assert.deepEqual(panel.diffStat, { added: 1, removed: 0 })
+  assert.deepEqual([...(panel.diff?.added ?? [])], [4])
+  session.markReviewed(file) // opening it counts as reviewing it...
+  panel.reload()
+  assert.equal(panel.isSinceReview(), true, '...but the view keeps the base it opened with')
+  panel.key('v')
+  assert.equal(panel.isSinceReview(), false, 'v shows all changes')
+  assert.equal(panel.key('v'), null)
+  assert.equal(panel.isSinceReview(), true)
+
+  edit('one\ntwo\nthree\nfour\nfive\n')
+  edit('one\ntwo\nthree\nfour\n')
+  assert.equal(session.changes[0].reviewed, true, 'back to exactly what was reviewed')
+  session.stop()
+  fs.rmSync(dir, { recursive: true, force: true })
+  fs.rmSync(cwd, { recursive: true, force: true })
+})

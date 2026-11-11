@@ -42,6 +42,7 @@ const HELP = [
   '',
   'In the tree:  ↑↓ / j k move · enter open · ← → fold · c changes list',
   'In the code:  ↑↓ move the line cursor · space/b page · d diff · n/p next/prev change',
+  '              v since your last review / all changes (after Claude edits a reviewed file)',
   '              c note on this line · s send notes · r mark reviewed',
   '              a ask Claude about this file · esc back to Claude',
   '',
@@ -414,6 +415,8 @@ export class App {
         const at = this.code.file ? this.code.lineAt() : null
         if (at === null || this.code.file === null) this.flash('Put the cursor on a line of code first.')
         else this.code.draft = { ...at, text: this.notes.at(this.code.file, at.line, at.code)?.text ?? '' }
+      } else if (action === 'no-review') {
+        this.flash('You haven\'t reviewed an earlier version of this file: the diff already shows all changes.')
       } else if (action === 'send') {
         this.sendNotes()
       } else if (action === 'ask' && this.code.file) {

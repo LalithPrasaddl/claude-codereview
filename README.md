@@ -57,6 +57,7 @@ You set it up once and it works in every project. Your normal `claude` command i
 - **Diff view.** `d` flips between the full file and its diff (against `HEAD` in a git repo, otherwise against the file before Claude touched it).
 - **Changes in the tree, like an editor.** Changed files are colored by status: yellow `M` modified, green `A` new, red `D` deleted, dimmed with `✓` once you've reviewed them. Folders holding unreviewed changes are yellow. A **CHANGED** list is pinned at the bottom of the tree (unreviewed first), so changes in collapsed folders are never out of sight. Arrow down past the last tree row (or click) to pick one; `c` shows the full list.
 - **Reviewed.** A file counts as reviewed once you open it yourself (tree, list, `n`/`p`) or press `r`. Files Claude opened for you don't count.
+- **Only what's new since you reviewed.** If Claude edits a file you've already reviewed, the code panel shows just the change since your review: the diff starts from what you read, and in the full file only the new lines are marked. `v` switches to all changes and back. If Claude puts the file back exactly as you reviewed it, it stays reviewed.
 - **Step through changes.** `n` / `p` go through this turn's files in the order Claude edited them, then the rest.
 - **Review notes.** Move the line cursor in the code panel and press `c` to leave a note on that line ("this should handle null"). Lines with notes get a `●`. `s` puts all your notes into Claude's prompt as one message, each with its file, line and code. You read it and press enter to send. `c` on a noted line edits the note; saving it empty removes it.
 - **Ask about it.** `a` types "About your change to <file>: " into Claude's prompt.
@@ -85,7 +86,7 @@ Optional, off by default:
 | `?` | all keys |
 | `q` | quit |
 
-In the tree: `↑↓` or `j k` (down past the end goes into the CHANGED list), `enter` open, `← →` fold, `c` change list. In the code: `↑↓` move the line cursor (or click a line), `space`/`b` page, `d` diff, `n`/`p` next/previous change, `c` note on this line, `s` send notes, `r` reviewed, `a` ask, `esc` back to Claude. The mouse wheel scrolls any panel.
+In the tree: `↑↓` or `j k` (down past the end goes into the CHANGED list), `enter` open, `← →` fold, `c` change list. In the code: `↑↓` move the line cursor (or click a line), `space`/`b` page, `d` diff, `v` since your review / all changes, `n`/`p` next/previous change, `c` note on this line, `s` send notes, `r` reviewed, `a` ask, `esc` back to Claude. The mouse wheel scrolls any panel.
 
 Settings live in `~/.config/codeview/config.json`. Changed lines get a faint green / red background suited to your terminal's colors; codeview asks the terminal for its background at startup. If it guesses wrong, set `"tint"` to `"dark"`, `"light"` or `"off"` (default `"auto"`).
 

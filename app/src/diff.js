@@ -63,6 +63,18 @@ export function baselinePath(sessionDir, file) {
   return path.join(sessionDir, 'baseline', key)
 }
 
+/** Where the file's text is kept as it was when the person last reviewed it. */
+export function reviewedPath(sessionDir, file) {
+  const key = crypto.createHash('sha1').update(file).digest('hex')
+  return path.join(sessionDir, 'reviewed', key)
+}
+
+/** A unified diff from `baseText` to the file as it is now (deleted: to nothing). */
+export function diffAgainstText(baseText, file, cwd) {
+  const target = fs.existsSync(file) ? file : '/dev/null'
+  return run('diff', ['-u', '-', target], cwd, baseText).out
+}
+
 function run(cmd, args, cwd, input) {
   const r = spawnSync(cmd, args, { cwd, input, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
   return { code: r.status ?? 1, out: r.stdout ?? '' }

@@ -3,7 +3,9 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { diffFor, diffStats, firstChangedLine } from './diff.js'
+import { diffAgainstText, diffFor, diffStats, firstChangedLine, reviewedPath } from './diff.js'
+
+const MAX_SNAPSHOT = 5 * 1024 * 1024
 
 /**
  * @typedef {{ file: string, added: number, removed: number, edits: number,
@@ -207,11 +209,43 @@ export class Session {
     }
   }
 
+  /** The file's text when the person last reviewed it, or null. */
+  reviewSnapshot(file) {
+    try {
+      return fs.readFileSync(reviewedPath(this.dir, file), 'utf8')
+    } catch {
+      return null
+    }
+  }
+
+  /** The diff from the person's last review to now, or null if there was no review. */
+  diffSinceReview(file) {
+    const snapshot = this.reviewSnapshot(file)
+    return snapshot === null ? null : diffAgainstText(snapshot, file, this.cwd)
+  }
+
+  /** Keep the file's text as reviewed (or forget it), so a later edit can show just what's new. */
+  saveSnapshot(file, keep) {
+    const saved = reviewedPath(this.dir, file)
+    try {
+      if (keep && fs.statSync(file).size <= MAX_SNAPSHOT) {
+        fs.mkdirSync(path.dirname(saved), { recursive: true })
+        fs.copyFileSync(file, saved)
+        return
+      }
+    } catch {
+      // deleted or unreadable: nothing to compare against later
+    }
+    fs.rmSync(saved, { force: true })
+  }
+
   /** Fold one edit into the change list. */
   record(file, why) {
     const { text } = this.diff(file)
     const { added, removed } = diffStats(text)
-    const focusLine = firstChangedLine(text)
+    const since = this.diffSinceReview(file)
+    // Point at what's new since the review, not at changes already read.
+    const focusLine = firstChangedLine(since || text)
     const status = fileStatus(file, text)
     let change = this.changes.find(c => c.file === file)
     if (change === undefined) {
@@ -221,7 +255,8 @@ export class Session {
       // One change can arrive twice (the watcher, then the edit hook): count it once.
       const isRepeat = Date.now() - (change.lastAt ?? 0) < 1500
       Object.assign(change, {
-        added, removed, focusLine, status, reviewed: false, lastAt: Date.now(),
+        // Back exactly as the person reviewed it: still reviewed.
+        added, removed, focusLine, status, reviewed: since === '', lastAt: Date.now(),
         edits: change.edits + (isRepeat ? 0 : 1),
         why: why || change.why,
       })
@@ -243,6 +278,7 @@ export class Session {
     const change = this.changes.find(c => c.file === file)
     if (change === undefined || change.reviewed === value) return
     change.reviewed = value
+    this.saveSnapshot(file, value)
     this.writeState()
   }
 

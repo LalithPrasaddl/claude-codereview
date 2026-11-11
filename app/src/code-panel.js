@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { changedLines, hunksOnly } from './diff.js'
+import { changedLines, diffAgainstText, diffStats, hunksOnly } from './diff.js'
 import { highlightLines, languageFor } from './highlight.js'
 import { BOLD, DIM, INVERSE, ITALIC, UNDERLINE } from './screen.js'
 import { fit, fitLeft, textWidth } from './width.js'
@@ -28,6 +28,12 @@ export function diffLineNumbers(lines) {
 
 /** @typedef {import('./highlight.js').Segment} Segment */
 
+/** The first line a diff adds or changes (1 when none). */
+function firstNewLine(diff) {
+  const all = [...(diff?.added ?? []), ...[...(diff?.removedAfter ?? [])].map(n => n + 1)]
+  return all.length === 0 ? 1 : Math.max(1, Math.min(...all))
+}
+
 export class CodePanel {
   /**
    * @param {string} cwd
@@ -49,6 +55,11 @@ export class CodePanel {
     this.text = null
     /** @type {{ lines: string[], numbers: (number | null)[], base: string, added: Set<number>, removedAfter: Set<number> } | null} */
     this.diff = null
+    /** The file's text at the person's last review, when Claude has changed it since; diffs then start there. */
+    this.reviewBase = null
+    /** Show changes since that review (true), or all changes (false: v switches). */
+    this.useReviewBase = true
+    this.diffStat = { added: 0, removed: 0 }
     /** The line the cursor is on: an index into the lines shown (file lines, or diff lines). */
     this.cursor = 0
     /** @type {import('./notes.js').Notes | null} */
@@ -70,7 +81,10 @@ export class CodePanel {
   reload() {
     if (this.file === null) return
     const file = this.file
-    const { text, base } = this.session.diff(file)
+    const { text, base } = this.isSinceReview()
+      ? { text: diffAgainstText(/** @type {string} */ (this.reviewBase), file, this.cwd), base: 'your last review' }
+      : this.session.diff(file)
+    this.diffStat = diffStats(text)
     const { added, removedAfter } = changedLines(text)
     const hunks = hunksOnly(text)
     const lines = hunks === '' ? [] : hunks.split('\n')
@@ -97,7 +111,16 @@ export class CodePanel {
   open(file, opts = {}) {
     const isSame = file === this.file
     this.file = file
-    if (!isSame) this.draft = null
+    if (!isSame) {
+      this.draft = null
+      this.useReviewBase = true
+    }
+    // Claude changed this file after the person reviewed it: diff against that review.
+    // Taken now, before opening it marks it reviewed again.
+    const change = this.session.changes.find(c => c.file === file)
+    const snapshot = change && !change.reviewed ? this.session.reviewSnapshot?.(file) ?? null : null
+    if (snapshot !== null) this.reviewBase = snapshot
+    else if (!isSame) this.reviewBase = null
     if (opts.showDiff !== undefined) this.showDiff = opts.showDiff
     this.reload()
     if (opts.focusLine !== undefined) this.focusOn(opts.focusLine)
@@ -118,6 +141,10 @@ export class CodePanel {
     }
     this.cursor = Math.max(0, line - 1)
     this.scroll = Math.max(0, line - 1 - Math.min(5, Math.floor(this.height / 4)))
+  }
+
+  isSinceReview() {
+    return this.reviewBase !== null && this.useReviewBase
   }
 
   /** The cursor's line as a note target: its line number in the file (null if removed) and text. */
@@ -217,6 +244,14 @@ export class CodePanel {
         return 'reviewed'
       case 'a':
         return 'ask'
+      case 'v':
+        if (this.reviewBase === null) return 'no-review'
+        this.useReviewBase = !this.useReviewBase
+        this.reload()
+        this.cursor = 0
+        this.scroll = 0
+        this.focusOn(this.showDiff ? 0 : firstNewLine(this.diff))
+        break
       case 'c':
         return 'note'
       case 's':
@@ -300,13 +335,19 @@ export class CodePanel {
     // Header: stats, review state, the "why" line and the keys.
     let cx = x + 1
     if (change) {
-      cx = screen.text(cx, y, `+${change.added}`, { fg: '32', flags: BOLD }, maxX)
-      cx = screen.text(cx + 1, y, `−${change.removed}`, { fg: '31', flags: BOLD }, maxX)
+      const stat = this.isSinceReview() ? this.diffStat : change
+      cx = screen.text(cx, y, `+${stat.added}`, { fg: '32', flags: BOLD }, maxX)
+      cx = screen.text(cx + 1, y, `−${stat.removed}`, { fg: '31', flags: BOLD }, maxX)
       cx = screen.text(cx + 2, y, change.reviewed ? '✓ reviewed' : '○ not reviewed', { fg: change.reviewed ? '32' : '33' }, maxX)
       cx += 2
     }
-    const view = this.showDiff ? `diff vs ${this.diff?.base ?? 'git'}` : 'full file'
-    screen.text(cx, y, fit(`${view} · follow ${this.follow ? 'on' : 'off'}`, maxX - cx), { flags: DIM }, maxX)
+    const since = this.isSinceReview()
+    const view = this.showDiff
+      ? since ? 'diff since your last review' : `diff vs ${this.diff?.base ?? 'git'}`
+      : since ? 'full file · ▌ new since your last review' : 'full file'
+    const toggle = this.reviewBase === null ? '' : since ? ' · v all changes' : ' · v since review'
+    cx = screen.text(cx, y, fit(view, maxX - cx), since ? { fg: ACCENT } : { flags: DIM }, maxX)
+    screen.text(cx, y, fit(`${toggle} · follow ${this.follow ? 'on' : 'off'}`, maxX - cx), { flags: DIM }, maxX)
     let top = y + 1
     if (change?.why) {
       screen.text(x + 1, top, fit(change.why, w - 2), { flags: DIM | ITALIC }, maxX)
